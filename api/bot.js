@@ -31,6 +31,12 @@ const ANSWERS = {
 };
 
 export default async function handler(req, res) {
+  // Падаем громко и понятно, если секрет не задан: молчащий бот отлаживать труднее,
+  // чем упавший. Эта же строка — учебный пример для занятия 6.
+  if (!process.env.BOT_TOKEN) {
+    throw new Error('BOT_TOKEN не задан в переменных окружения проекта');
+  }
+
   try {
     const msg = req.body && req.body.message;
     if (msg && msg.chat) {
