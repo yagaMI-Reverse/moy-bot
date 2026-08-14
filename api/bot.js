@@ -3,7 +3,7 @@
 // Секреты берутся только из переменных окружения: BOT_TOKEN и GEMINI_KEY.
 
 // [ПРОВЕРИТЬ ПЕРЕД ЗАНЯТИЕМ] Имена моделей меняются. Актуальные — в AI Studio.
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-flash-latest';
 
 const MENU = {
   keyboard: [
@@ -64,16 +64,11 @@ const SYSTEM_PROMPT = `Ты — ассистент салона красоты �
 - Подарочные сертификаты: есть, оформляются на любую сумму от 5 000 ₸.`;
 
 async function callGemini(question) {
-  // Ключ передаём заголовком: ключи нового формата (начинаются с «AQ.»)
-  // в адресе запроса не принимаются.
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_KEY}`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': process.env.GEMINI_KEY,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: question }] }],
@@ -119,7 +114,12 @@ export default async function handler(req, res) {
       const text = (msg.text || '').trim();
 
       let answer;
-      if (ANSWERS[text]) {
+      if (text === '/debug') {
+        // Служебная команда для преподавателя: показывает сырой ответ модели.
+        // Клиенту такое не показывают — на занятии 7 об этом говорится отдельно.
+        const r = await callGemini('Скажи одно слово: работает');
+        answer = 'Модель: ' + MODEL + '\nСтатус: ' + r.status + '\nОтвет: ' + (r.text || '(пусто, подробности в журнале)');
+      } else if (ANSWERS[text]) {
         answer = ANSWERS[text];
       } else if (!process.env.GEMINI_KEY) {
         answer = 'Нажмите одну из кнопок меню 👇';
