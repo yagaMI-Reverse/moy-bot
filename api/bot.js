@@ -63,7 +63,7 @@ const SYSTEM_PROMPT = `Ты — ассистент салона красоты �
 - Дети: с детьми принимаем, но отдельной детской зоны нет.
 - Подарочные сертификаты: есть, оформляются на любую сумму от 5 000 ₸.`;
 
-async function askModel(question) {
+async function callGemini(question) {
   // Ключ передаём заголовком: ключи нового формата (начинаются с «AQ.»)
   // в адресе запроса не принимаются.
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -81,15 +81,31 @@ async function askModel(question) {
     }),
   });
 
-  if (res.status === 429) return 'Сейчас много обращений, попробуйте через минуту 🙏';
   if (!res.ok) {
-    console.error('Gemini error', res.status, await res.text());
-    return 'Не получилось ответить прямо сейчас. Напишите, пожалуйста, чуть позже.';
+    const body = await res.text();
+    console.error('Gemini error', res.status, body);
+    return { status: res.status, text: null };
   }
 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
-  return text.trim() || 'Уточню у администратора и вернусь к вам.';
+  return { status: 200, text: text.trim() };
+}
+
+async function askModel(question) {
+  let r = await callGemini(question);
+
+  // 503 — у модели пик нагрузки на стороне Google, это лечится повтором.
+  // 429 — исчерпан наш бесплатный лимит, повтор не поможет.
+  if (r.status === 503) {
+    await new Promise((wait) => setTimeout(wait, 1500));
+    r = await callGemini(question);
+  }
+
+  if (r.status === 429) return 'Сейчас много обращений, попробуйте через минуту 🙏';
+  if (r.status === 503) return 'Модель сейчас перегружена. Напишите, пожалуйста, через минуту.';
+  if (!r.text) return 'Не получилось ответить прямо сейчас. Напишите, пожалуйста, чуть позже.';
+  return r.text;
 }
 
 export default async function handler(req, res) {
