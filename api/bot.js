@@ -3,7 +3,14 @@
 // Секреты берутся только из переменных окружения: BOT_TOKEN и GEMINI_KEY.
 
 // [ПРОВЕРИТЬ ПЕРЕД ЗАНЯТИЕМ] Имена моделей меняются. Актуальные — в AI Studio.
-const MODEL = 'gemini-flash-latest';
+// Очередь: самые свежие модели чаще перегружены (503), «lite» почти всегда свободны.
+// Бот идёт по списку сверху вниз, пока какая-нибудь не ответит.
+const MODELS = [
+  'gemini-flash-latest',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-flash-lite-latest',
+];
 
 const MENU = {
   keyboard: [
@@ -63,8 +70,8 @@ const SYSTEM_PROMPT = `Ты — ассистент салона красоты �
 - Дети: с детьми принимаем, но отдельной детской зоны нет.
 - Подарочные сертификаты: есть, оформляются на любую сумму от 5 000 ₸.`;
 
-async function callGemini(question) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_KEY}`;
+async function callGemini(question, model) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_KEY}`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -78,25 +85,29 @@ async function callGemini(question) {
 
   if (!res.ok) {
     const body = await res.text();
-    console.error('Gemini error', res.status, body);
-    return { status: res.status, text: null };
+    console.error('Gemini error', model, res.status, body.slice(0, 300));
+    return { status: res.status, text: null, model };
   }
 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
-  return { status: 200, text: text.trim() };
+  return { status: 200, text: text.trim(), model };
+}
+
+// Перебираем модели по очереди: 503 и 404 — повод взять следующую,
+// 429 — наш лимит исчерпан, дальше идти бессмысленно.
+async function askAnyModel(question) {
+  let last = { status: 0, text: null, model: MODELS[0] };
+  for (const model of MODELS) {
+    last = await callGemini(question, model);
+    if (last.status === 200 && last.text) return last;
+    if (last.status === 429) return last;
+  }
+  return last;
 }
 
 async function askModel(question) {
-  let r = await callGemini(question);
-
-  // 503 — у модели пик нагрузки на стороне Google, это лечится повтором.
-  // 429 — исчерпан наш бесплатный лимит, повтор не поможет.
-  if (r.status === 503) {
-    await new Promise((wait) => setTimeout(wait, 1500));
-    r = await callGemini(question);
-  }
-
+  const r = await askAnyModel(question);
   if (r.status === 429) return 'Сейчас много обращений, попробуйте через минуту 🙏';
   if (r.status === 503) return 'Модель сейчас перегружена. Напишите, пожалуйста, через минуту.';
   if (!r.text) return 'Не получилось ответить прямо сейчас. Напишите, пожалуйста, чуть позже.';
@@ -117,8 +128,8 @@ export default async function handler(req, res) {
       if (text === '/debug') {
         // Служебная команда для преподавателя: показывает сырой ответ модели.
         // Клиенту такое не показывают — на занятии 7 об этом говорится отдельно.
-        const r = await callGemini('Скажи одно слово: работает');
-        answer = 'Модель: ' + MODEL + '\nСтатус: ' + r.status + '\nОтвет: ' + (r.text || '(пусто, подробности в журнале)');
+        const r = await askAnyModel('Скажи одно слово: работает');
+        answer = 'Модель: ' + r.model + '\nСтатус: ' + r.status + '\nОтвет: ' + (r.text || '(пусто, подробности в журнале)');
       } else if (ANSWERS[text]) {
         answer = ANSWERS[text];
       } else if (!process.env.GEMINI_KEY) {
