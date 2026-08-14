@@ -3,7 +3,7 @@
 // Секреты берутся только из переменных окружения: BOT_TOKEN и GEMINI_KEY.
 
 // [ПРОВЕРИТЬ ПЕРЕД ЗАНЯТИЕМ] Имена моделей меняются. Актуальные — в AI Studio.
-const MODEL = 'gemini-flash-latest';
+const MODEL = 'gemini-2.5-flash';
 
 const MENU = {
   keyboard: [
@@ -64,11 +64,16 @@ const SYSTEM_PROMPT = `Ты — ассистент салона красоты �
 - Подарочные сертификаты: есть, оформляются на любую сумму от 5 000 ₸.`;
 
 async function askModel(question) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_KEY}`;
+  // Ключ передаём заголовком: ключи нового формата (начинаются с «AQ.»)
+  // в адресе запроса не принимаются.
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': process.env.GEMINI_KEY,
+    },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: question }] }],
